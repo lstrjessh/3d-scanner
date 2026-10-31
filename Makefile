@@ -1,63 +1,74 @@
-DEVICE     = atmega328p
-CLOCK      = 16000000
-PROGRAMMER = -c arduino -b 115200 -P COM3
-OBJECTS    = scanner_c_code.o ff.o diskio.o
-FUSES      = -U hfuse:w:0xde:m -U lfuse:w:0xff:m -U efuse:w:0x05:m
+DEVICE     ?= atmega328p
+CLOCK      ?= 16000000
+PORT       ?= COM3
+BAUD       ?= 115200
+PROGRAMMER ?= -c arduino -b $(BAUD) -P $(PORT)
 
-# Tune the lines below only if you know what you are doing:
+AVR_CC      ?= avr-gcc
+AVR_OBJCOPY ?= avr-objcopy
+AVR_SIZE    ?= avr-size
+AVR_OBJDUMP ?= avr-objdump
+AVRDUDE     ?= avrdude
 
-AVRDUDE = avrdude $(PROGRAMMER) -p $(DEVICE)
-COMPILE = avr-gcc -Wall -Os -DF_CPU=$(CLOCK) -mmcu=$(DEVICE)
+AVR_DIR    := firmware/avr
+FATFS_DIR  := vendor/fatfs
+BUILD_DIR  := build/avr
+TARGET     := $(BUILD_DIR)/scanner
+CONFIG     := $(AVR_DIR)/include/ffconf.h
+OBJECTS    := $(BUILD_DIR)/main.o $(BUILD_DIR)/diskio.o $(BUILD_DIR)/ff.o
 
-# symbolic targets:
-all:	main.hex
+CPPFLAGS += -DF_CPU=$(CLOCK)UL -I$(AVR_DIR)/include -I$(FATFS_DIR)
+CFLAGS   += -std=gnu99 -Wall -Wextra -Os -mmcu=$(DEVICE) -ffunction-sections -fdata-sections
+LDFLAGS  += -mmcu=$(DEVICE) -Wl,--gc-sections -Wl,-Map,$(TARGET).map -Wl,-u,vfprintf
+LDLIBS   += -lprintf_flt -lm
 
-.c.o:
-	$(COMPILE) -c $< -o $@
+.PHONY: all flash clean size disasm cpp help
+.DEFAULT_GOAL := all
 
-.S.o:
-	$(COMPILE) -x assembler-with-cpp -c $< -o $@
-# "-x assembler-with-cpp" should not be necessary since this is the default
-# file type for the .S (with capital S) extension. However, upper case
-# characters are not always preserved on Windows. To ensure WinAVR
-# compatibility define the file type manually.
+all: $(TARGET).hex
 
-.c.s:
-	$(COMPILE) -S $< -o $@
+$(BUILD_DIR):
+	mkdir -p "$@"
 
-flash:	all
-	$(AVRDUDE) -U flash:w:main.hex:i
+$(CONFIG):
+	@echo "Missing $(CONFIG). Supply a matching FatFs configuration (FFCONF_DEF=80286)."
+	@echo "The SD adapter also needs implementation. See docs/firmware.md."
+	@exit 1
 
-fuse:
-	$(AVRDUDE) $(FUSES)
+$(BUILD_DIR)/%.o: $(AVR_DIR)/src/%.c $(CONFIG) | $(BUILD_DIR)
+	$(AVR_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
-# Xcode uses the Makefile targets "", "clean" and "install"
-install: flash fuse
+$(BUILD_DIR)/ff.o: $(FATFS_DIR)/ff.c $(CONFIG) | $(BUILD_DIR)
+	$(AVR_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
-# if you use a bootloader, change the command below appropriately:
-load: all
-	bootloadHID main.hex
+$(TARGET).elf: $(OBJECTS)
+	$(AVR_CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
+
+$(TARGET).hex: $(TARGET).elf
+	$(AVR_OBJCOPY) -j .text -j .data -O ihex $< $@
+	$(AVR_SIZE) --format=avr --mcu=$(DEVICE) $<
+
+flash: all
+	$(AVRDUDE) $(PROGRAMMER) -p $(DEVICE) -U flash:w:$(TARGET).hex:i
+
+size: $(TARGET).elf
+	$(AVR_SIZE) --format=avr --mcu=$(DEVICE) $<
+
+disasm: $(TARGET).elf
+	$(AVR_OBJDUMP) -d $<
+
+cpp: $(CONFIG)
+	$(AVR_CC) $(CPPFLAGS) $(CFLAGS) -E $(AVR_DIR)/src/main.c
 
 clean:
-	rm -f main.hex main.elf $(OBJECTS)
+	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET).elf $(TARGET).hex $(TARGET).map
 
-# file targets:
-main.elf: $(OBJECTS)
-	$(COMPILE) -o main.elf $(OBJECTS)
+help:
+	@echo "make             Build AVR firmware after completing the SD port"
+	@echo "make flash       Upload AVR firmware; override PORT for your board"
+	@echo "make size        Show AVR memory usage"
+	@echo "make disasm      Print AVR disassembly"
+	@echo "make clean       Remove generated AVR files"
+	@echo "Arduino sketch:  firmware/arduino/3d_scanner/3d_scanner.ino"
 
-main.hex: main.elf
-	rm -f main.hex
-	avr-objcopy -j .text -j .data -O ihex main.elf main.hex
-	avr-size --format=avr --mcu=$(DEVICE) main.elf
-# If you have an EEPROM section, you must also create a hex file for the
-# EEPROM and add it to the "flash" target.
-
-# Targets for code debugging and analysis:
-disasm:	main.elf
-	avr-objdump -d main.elf
-
-cpp:
-	$(COMPILE) -E main.c
-
-test: test.hex
-	$(AVRDUDE) -U flash:w:test.hex:i
+-include $(OBJECTS:.o=.d)

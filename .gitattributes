@@ -1,0 +1,10 @@
+# Preserve the original firmware and vendored sources verbatim.
+*.c -text
+*.h -text
+*.ino -text
+*.png binary
+*.pdf binary
+*.md text eol=lf
+Makefile text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
