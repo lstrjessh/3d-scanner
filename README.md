@@ -26,4 +26,4 @@ The repository currently lacks `ffconf.h`, which `ff.h` requires. Supply a compa
 
 - [System design](system_design.png)
 - [Program flow](program_flow.png)
-- [PointNet shape classifier](https://github.com/lstrjessh/PointNet-NeuralNetwork-Shape-Classifier-for-Arduino-3D-Scanner-Point-Cloud-Data)
+- [PointNet shape classifier](https://github.com/lstrjessh/shape-classifier)
