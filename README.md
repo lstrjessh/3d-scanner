@@ -1,4 +1,4 @@
-# Low-Cost 3D Scanner
+# 3D Scanner
 
 An infrared point cloud scanner using a Sharp GP2Y0A41SK0F distance sensor, stepper motors, and an ATmega328P. Captured coordinates are saved to an SD card for visualization and shape classification.
 
